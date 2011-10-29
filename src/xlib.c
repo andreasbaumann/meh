@@ -184,7 +184,7 @@ void backend_init(){
 	backend_setaspect(1, 1);
 	gc = XCreateGC(display, window, 0, NULL);
 
-	XSelectInput(display, window, StructureNotifyMask | ExposureMask | KeyPressMask);
+	XSelectInput(display, window, StructureNotifyMask | ExposureMask | KeyPressMask | ButtonPressMask);
 	XMapRaised(display, window);
 	XFlush(display);
 	XSetIOErrorHandler(xquit);
@@ -223,6 +223,17 @@ void handlekeypress(XEvent *event){
 	}
 }
 
+void handlebuttonpress(XEvent *event){
+	XButtonPressedEvent *ev = &event->xbutton;
+	switch(ev->button){
+		case Button4:
+			key_prev();
+			break;
+		case Button5:
+			key_next();
+			break;
+	}
+}
 
 void handleevent(XEvent *event){
 	switch(event->type){
@@ -256,6 +267,9 @@ void handleevent(XEvent *event){
 			break;
 		case KeyPress:
 			handlekeypress(event);
+			break;
+		case ButtonPress:
+			handlebuttonpress(event);
 			break;
 	}
 }
