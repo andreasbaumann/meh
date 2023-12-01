@@ -23,6 +23,7 @@ static struct imageformat *formats[] = {
 	&netpbm,
 	&giflib, /* HACK! make gif last (uses read()) */
 	&qoi,
+	&farbfeld,
 	&imagemagick,
 	NULL
 };
