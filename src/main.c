@@ -121,7 +121,7 @@ void key_quit(){
 }
 
 void key_default(char *key){
-	printf("%s %s\n", key, images[imageidx]);
+	printf("KEY %s %s\n", key, images[imageidx]);
 	fflush(stdout);
 }
 
@@ -210,10 +210,10 @@ static int doredraw(struct image **i, int idx, int (*dir)(int), int dstates){
 
 				/* state should not be drawn so that we will draw later (also assures correct return value) */
 				assert(!((*i)->state & DRAWN));
-        if(strcmp(images[idx],curfilename) != 0){
-          curfilename = images[idx];
-          printf("%s\n", curfilename);
-        } 
+				if(strcmp(images[idx],curfilename) != 0){
+					curfilename = images[idx];
+					printf("CURRENT - %s\n", curfilename);
+				} 
 			}
 		}
 		if((dstates & DRAWN) && ((*i)->state & SCALED) && !(state & DRAWN)){
