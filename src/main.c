@@ -35,7 +35,7 @@ static void usage(){
 	printf("       meh -list [LISTFILE]      : Treat file as list of images. Defaults to stdin.\n");
 	printf("       meh -ctl                  : Display files as they are received on stdin.\n");
 	printf("       meh -v                    : Print version and exit.\n");
-  printf("       meh -f                    : Use nearest neighbor interpolation (fast).\n");
+	printf("       meh -f                    : Use nearest neighbor interpolation (fast).\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -315,12 +315,12 @@ int main(int argc, char *argv[]){
 		printf("meh version 0.3\n");
 		return 0;
 	}else if (!strcmp(argv[1], "-f")){
-    mode = MODE_FAST;
-    images = argv + 2;
-    imageslen = argc - 2;
-    imageidx = 0;
-  } else {
-    mode = MODE_NORM;
+		mode = MODE_FAST;
+		images = argv + 2;
+		imageslen = argc - 2;
+		imageidx = 0;
+	} else {
+		mode = MODE_NORM;
 		images = &argv[1];
 		imageslen = argc-1;
 		imageidx = 0;
