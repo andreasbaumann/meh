@@ -59,6 +59,8 @@ static int imageslen;
 static int imageidx;
 static char **images;
 
+char *curfilename = "";
+
 int width = 0, height = 0;
 struct image *curimg = NULL;
 
@@ -120,6 +122,11 @@ void key_prev(){
 }
 void meh_quit(){
 	exit(EXIT_SUCCESS);
+}
+
+void key_default(char *key){
+	printf("KEY %s %s\n", key, images[imageidx]);
+	fflush(stdout);
 }
 
 void key_action(){
@@ -207,6 +214,10 @@ static int doredraw(struct image **i, int idx, int (*dir)(int), int dstates){
 
 				/* state should not be drawn so that we will draw later (also assures correct return value) */
 				assert(!((*i)->state & DRAWN));
+				if(strcmp(images[idx],curfilename) != 0){
+					curfilename = images[idx];
+					printf("CURRENT - %s\n", curfilename);
+				} 
 			}
 		}
 		if((dstates & DRAWN) && ((*i)->state & SCALED) && !(state & DRAWN)){

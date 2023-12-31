@@ -46,6 +46,7 @@ void key_next();
 void key_prev();
 void meh_quit();
 void key_action();
+void key_default(char *key);
 
 /* callbacks from backend */
 int setup_fds(fd_set *fds);

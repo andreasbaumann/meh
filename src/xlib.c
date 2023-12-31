@@ -301,6 +301,8 @@ void handlekeypress(XEvent *event){
 			if(curimg)
 				XResizeWindow(display, window, curimg->bufwidth, curimg->bufheight);
 			break;
+		default:
+			key_default(XKeysymToString(key));
 	}
 }
 
