@@ -187,6 +187,77 @@ STARTTEST(pack_vga16){
 	}
 }ENDTEST
 
+
+STARTTEST(palette_lookup){
+	static unsigned char lut[LUTSIZE];
+	/* black, white, red */
+	const unsigned char pal[9] = {0,0,0, 255,255,255, 255,0,0};
+
+	palette_lut(lut, pal, 3);
+
+	/* exact colours must map to their own entry */
+	assert(lut[0] == 0);					/* r5g5b5 (0,0,0) */
+	assert(lut[(31 << 10) | (31 << 5) | 31] == 1);		/* white */
+	assert(lut[(31 << 10) | (0 << 5) | 0] == 2);		/* red */
+	/* near black stays black, near white stays white */
+	assert(lut[(1 << 10) | (1 << 5) | 1] == 0);
+	assert(lut[(30 << 10) | (30 << 5) | 30] == 1);
+	/* every entry must be a valid index */
+	{
+		unsigned int i;
+		for(i = 0; i < LUTSIZE; i++)
+			assert(lut[i] < 3);
+	}
+}ENDTEST
+
+STARTTEST(pack_palette){
+	static unsigned char lut[LUTSIZE];
+	const unsigned char pal[9] = {0,0,0, 255,255,255, 255,0,0};
+	struct pixfmt fmt;
+	unsigned char black[4] = {0x00, 0x00, 0x00, 0x00};
+	unsigned char white[4] = {0xff, 0xff, 0xff, 0x00};
+	unsigned char red[4]   = {0x00, 0x00, 0xff, 0x00};
+	unsigned char out;
+
+	palette_lut(lut, pal, 3);
+	pixfmt_init(&fmt, 8, 0, 0, 0, 0);
+	assert(!fmt.direct);
+	assert(pixfmt_iscoarse(&fmt));	/* no masks at all counts as coarse */
+	pixfmt_setpalette(&fmt, lut);
+	assert(!fmt.direct);
+	assert(pixfmt_iscoarse(&fmt));
+
+	pack_rows(&fmt, black, (char *)&out, 1, 1, 4, 1);
+	assert(out == 0);
+	pack_rows(&fmt, white, (char *)&out, 1, 1, 4, 1);
+	assert(out == 1);
+	pack_rows(&fmt, red, (char *)&out, 1, 1, 4, 1);
+	assert(out == 2);
+}ENDTEST
+
+STARTTEST(coarse_detection){
+	struct pixfmt fmt;
+
+	/* 8 bit channels are not coarse, and must keep the direct path */
+	pixfmt_init(&fmt, 32, 0, 0xff0000, 0xff00, 0xff);
+	assert(!pixfmt_iscoarse(&fmt));
+	assert(fmt.direct);
+
+	/* RGB565 and RGB555 have 5 bits everywhere, so no dither */
+	pixfmt_init(&fmt, 16, 0, 0xf800, 0x07e0, 0x001f);
+	assert(!pixfmt_iscoarse(&fmt));
+	pixfmt_init(&fmt, 16, 0, 0x7c00, 0x03e0, 0x001f);
+	assert(!pixfmt_iscoarse(&fmt));
+
+	/* 10 bit deep colour is not coarse either */
+	pixfmt_init(&fmt, 32, 0, 0x3ff00000, 0x000ffc00, 0x000003ff);
+	assert(!pixfmt_iscoarse(&fmt));
+
+	/* the vga16fb 2-1-1 layout is */
+	pixfmt_init(&fmt, 8, 0, 0x3, 0x4, 0x8);
+	assert(pixfmt_iscoarse(&fmt));
+}ENDTEST
+
 test_t tests[] = {
 	test_scale,
 	test_nearestscale,
@@ -196,6 +267,9 @@ test_t tests[] = {
 	test_pack_deepcolour,
 	test_pack_stride,
 	test_pack_vga16,
+	test_palette_lookup,
+	test_pack_palette,
+	test_coarse_detection,
 	NULL
 };
 
