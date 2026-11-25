@@ -1,7 +1,4 @@
 
-meh does not currently support display depths under 24 bits. This should be
-fixed in the next release.
-
 Some WM's, though very few, allow meh's window to be resized to a width of 0.
 meh is likely to crash in this case. A workaround will be found for the next
 release.
