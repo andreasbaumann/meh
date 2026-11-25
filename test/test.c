@@ -1,9 +1,11 @@
 #include "stdio.h"
 #include "stdlib.h"
+#include "string.h"
 #include "sys/time.h"
 
 #include "../src/meh.h"
 #include "../src/scale.h"
+#include "../src/convert.h"
 
 #define TESTRUNS 20
 #define STARTTEST(name) int test_##name(){ testname = #name; testsrun++; do
@@ -22,9 +24,10 @@ STARTTEST(scale){
 	img.bufwidth = 1280*2;
 	img.bufheight = 1024*2;
 	img.buf = malloc(img.bufwidth*img.bufheight*4);
+	memset(img.buf, 0x80, img.bufwidth*img.bufheight*3);
 	char *to = malloc(1280*1024*4);
 	STARTTIME{
-		scale(&img, 1280, 1024, 1280, to);
+		scale(&img, 1280, 1024, 1280*4, to);
 	}ENDTIME
 	free(to);
 	free(img.buf);
@@ -35,17 +38,119 @@ STARTTEST(nearestscale){
 	img.bufwidth = 1280*2;
 	img.bufheight = 1024*2;
 	img.buf = malloc(img.bufwidth*img.bufheight*4);
+	memset(img.buf, 0x80, img.bufwidth*img.bufheight*3);
 	char *to = malloc(1280*1024*4);
 	STARTTIME{
-		nearestscale(&img, 1280, 1024, 1280, to);
+		nearestscale(&img, 1280, 1024, 1280*4, to);
 	}ENDTIME
 	free(to);
 	free(img.buf);
 }ENDTEST
 
+
+STARTTEST(pixfmt_masks){
+	struct pixfmt fmt;
+
+	/* RGB565 */
+	pixfmt_init(&fmt, 16, 0, 0xf800, 0x07e0, 0x001f);
+	assert(fmt.rshift == 11 && fmt.rbits == 5);
+	assert(fmt.gshift ==  5 && fmt.gbits == 6);
+	assert(fmt.bshift ==  0 && fmt.bbits == 5);
+	assert(!fmt.direct);
+
+	/* RGB555 */
+	pixfmt_init(&fmt, 16, 0, 0x7c00, 0x03e0, 0x001f);
+	assert(fmt.rshift == 10 && fmt.rbits == 5);
+	assert(fmt.gshift ==  5 && fmt.gbits == 5);
+	assert(fmt.bshift ==  0 && fmt.bbits == 5);
+
+	/* 10 bit deep colour */
+	pixfmt_init(&fmt, 32, 0, 0x3ff00000, 0x000ffc00, 0x000003ff);
+	assert(fmt.rshift == 20 && fmt.rbits == 10);
+	assert(fmt.gshift == 10 && fmt.gbits == 10);
+	assert(fmt.bshift ==  0 && fmt.bbits == 10);
+	assert(!fmt.direct);
+
+	/* what scale() writes natively */
+	pixfmt_init(&fmt, 32, 0, 0xff0000, 0x00ff00, 0x0000ff);
+	assert(fmt.direct);
+
+	/* same masks but MSBFirst must not take the direct path */
+	pixfmt_init(&fmt, 32, 1, 0xff0000, 0x00ff00, 0x0000ff);
+	assert(!fmt.direct);
+}ENDTEST
+
+STARTTEST(pack_rgb565){
+	struct pixfmt fmt;
+	/* source is BGRX, as scale() writes it */
+	unsigned char red[4]   = {0x00, 0x00, 0xff, 0x00};
+	unsigned char blue[4]  = {0xff, 0x00, 0x00, 0x00};
+	unsigned char white[4] = {0xff, 0xff, 0xff, 0x00};
+	unsigned char black[4] = {0x00, 0x00, 0x00, 0x00};
+	unsigned char dst[2];
+
+	pixfmt_init(&fmt, 16, 0, 0xf800, 0x07e0, 0x001f);
+
+	pack_rows(&fmt, red, (char *)dst, 1, 1, 4, 2);
+	assert(dst[0] == 0x00 && dst[1] == 0xf8);	/* 0xf800 LSBFirst */
+
+	pack_rows(&fmt, blue, (char *)dst, 1, 1, 4, 2);
+	assert(dst[0] == 0x1f && dst[1] == 0x00);	/* 0x001f */
+
+	pack_rows(&fmt, white, (char *)dst, 1, 1, 4, 2);
+	assert(dst[0] == 0xff && dst[1] == 0xff);	/* saturates to all ones */
+
+	pack_rows(&fmt, black, (char *)dst, 1, 1, 4, 2);
+	assert(dst[0] == 0x00 && dst[1] == 0x00);
+}ENDTEST
+
+STARTTEST(pack_byteorder){
+	struct pixfmt fmt;
+	unsigned char red[4] = {0x00, 0x00, 0xff, 0x00};
+	unsigned char dst[2];
+
+	pixfmt_init(&fmt, 16, 1, 0xf800, 0x07e0, 0x001f);
+	pack_rows(&fmt, red, (char *)dst, 1, 1, 4, 2);
+	assert(dst[0] == 0xf8 && dst[1] == 0x00);	/* 0xf800 MSBFirst */
+}ENDTEST
+
+STARTTEST(pack_deepcolour){
+	struct pixfmt fmt;
+	unsigned char white[4] = {0xff, 0xff, 0xff, 0x00};
+	unsigned char green[4] = {0x00, 0xff, 0x00, 0x00};
+	unsigned char dst[4];
+
+	pixfmt_init(&fmt, 32, 0, 0x3ff00000, 0x000ffc00, 0x000003ff);
+
+	/* 0xff must widen to all ten bits, not to 0x0ff */
+	pack_rows(&fmt, white, (char *)dst, 1, 1, 4, 4);
+	assert(dst[0] == 0xff && dst[1] == 0xff && dst[2] == 0xff && dst[3] == 0x3f);
+
+	pack_rows(&fmt, green, (char *)dst, 1, 1, 4, 4);
+	assert(dst[0] == 0x00 && dst[1] == 0xfc && dst[2] == 0x0f && dst[3] == 0x00);
+}ENDTEST
+
+STARTTEST(pack_stride){
+	struct pixfmt fmt;
+	/* two rows of one pixel, source stride 8, dest stride 4 */
+	unsigned char src[8] = {0x00,0x00,0xff,0x00, 0xff,0x00,0x00,0x00};
+	unsigned char dst[4];
+
+	pixfmt_init(&fmt, 16, 0, 0xf800, 0x07e0, 0x001f);
+	dst[2] = dst[3] = 0xaa;
+	pack_rows(&fmt, src, (char *)dst, 1, 2, 4, 2);
+	assert(dst[0] == 0x00 && dst[1] == 0xf8);	/* row 0 red */
+	assert(dst[2] == 0x1f && dst[3] == 0x00);	/* row 1 blue */
+}ENDTEST
+
 test_t tests[] = {
 	test_scale,
 	test_nearestscale,
+	test_pixfmt_masks,
+	test_pack_rgb565,
+	test_pack_byteorder,
+	test_pack_deepcolour,
+	test_pack_stride,
 	NULL
 };
 
