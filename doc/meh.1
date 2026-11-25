@@ -33,3 +33,28 @@ Display files as they are received on stdin.
 .TP
 .B \-v
 Print version and exit.
+.SH DISPLAY DEPTHS
+.B meh
+renders to whatever visual the X server offers. TrueColor and DirectColor
+visuals of any channel layout are supported, including 15 and 16 bit, packed
+24 bit, 10 bit deep colour, and MSBFirst servers. Palettised visuals
+(PseudoColor, StaticColor, GrayScale, StaticGray) are supported at one byte
+per pixel.
+.PP
+Where several visuals are available at the screen's depth,
+.B meh
+does not simply take the default one. A TrueColor visual with at least five
+bits in every channel is preferred; failing that a writable palette is
+preferred over a read-only one, and colour over grey. On a sixteen colour
+display this picks a PseudoColor visual with sixteen settable entries over a
+TrueColor visual that would have only one or two bits per channel.
+.PP
+Output coarse enough to band is dithered with an ordered 4x4 pattern.
+Formats with five or more bits per channel are never dithered.
+.SH ENVIRONMENT
+.TP
+.B MEH_DITHER
+Set to
+.B 0
+to disable dithering on coarse displays. Useful for judging the result by eye
+on the hardware, since the trade is banding against noise.
