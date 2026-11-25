@@ -143,6 +143,50 @@ STARTTEST(pack_stride){
 	assert(dst[2] == 0x1f && dst[3] == 0x00);	/* row 1 blue */
 }ENDTEST
 
+
+/*
+ * The vga16fb i486 target: default visual is TrueColor at depth 4 with a
+ * 2-1-1 bit layout, and depth 4 uses one byte per pixel. The server
+ * advertises "preallocated pixels: black 0, white 15", which pins both
+ * ends of our mapping.
+ */
+STARTTEST(pack_vga16){
+	struct pixfmt fmt;
+	unsigned char black[4] = {0x00, 0x00, 0x00, 0x00};
+	unsigned char white[4] = {0xff, 0xff, 0xff, 0x00};
+	unsigned char red[4]   = {0x00, 0x00, 0xff, 0x00};
+	unsigned char green[4] = {0x00, 0xff, 0x00, 0x00};
+	unsigned char blue[4]  = {0xff, 0x00, 0x00, 0x00};
+	unsigned char out;
+
+	pixfmt_init(&fmt, 8, 0, 0x3, 0x4, 0x8);
+	assert(fmt.rshift == 0 && fmt.rbits == 2);
+	assert(fmt.gshift == 2 && fmt.gbits == 1);
+	assert(fmt.bshift == 3 && fmt.bbits == 1);
+	assert(!fmt.direct);
+	/* must take the mask path, not the unsupported-visual exit */
+	assert(fmt.rmask | fmt.gmask | fmt.bmask);
+
+	pack_rows(&fmt, black, (char *)&out, 1, 1, 4, 1);
+	assert(out == 0);
+	pack_rows(&fmt, white, (char *)&out, 1, 1, 4, 1);
+	assert(out == 15);
+	pack_rows(&fmt, red, (char *)&out, 1, 1, 4, 1);
+	assert(out == 3);
+	pack_rows(&fmt, green, (char *)&out, 1, 1, 4, 1);
+	assert(out == 4);
+	pack_rows(&fmt, blue, (char *)&out, 1, 1, 4, 1);
+	assert(out == 8);
+
+	/* nothing may escape the four planes */
+	for(unsigned int i = 0; i < 256; i++){
+		unsigned char px[4];
+		px[0] = px[1] = px[2] = i; px[3] = 0;
+		pack_rows(&fmt, px, (char *)&out, 1, 1, 4, 1);
+		assert(out < 16);
+	}
+}ENDTEST
+
 test_t tests[] = {
 	test_scale,
 	test_nearestscale,
@@ -151,6 +195,7 @@ test_t tests[] = {
 	test_pack_byteorder,
 	test_pack_deepcolour,
 	test_pack_stride,
+	test_pack_vga16,
 	NULL
 };
 
