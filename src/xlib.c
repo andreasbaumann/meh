@@ -15,6 +15,22 @@
 #include "scale.h"
 #include "convert.h"
 
+static void maskbits(unsigned long mask, int *shift, int *bits){
+	int sh = 0, b = 0;
+	if(mask){
+		while(!(mask & 1)){
+			mask >>= 1;
+			sh++;
+		}
+		while(mask & 1){
+			mask >>= 1;
+			b++;
+		}
+	}
+	*shift = sh;
+	*bits = b;
+}
+
 struct data_t{
 	XImage *ximg;
 	XShmSegmentInfo *shminfo;
@@ -26,9 +42,195 @@ static int screen;
 static Window window;
 static GC gc;
 
+/* Chosen visual, which is not necessarily the default one. */
+static Visual *visual;
+static int visualdepth;
+static Colormap colormap = None;
+static int palettised = 0;
+static unsigned long blackpixel = 0;
+static unsigned char palettelut[LUTSIZE];
+static int dither = -1;		/* -1 = decide from the format */
+
 static int xfd;
 
 static int xshm = 0;
+
+
+/*
+ * Score a visual by how well it can show a photograph.
+ *
+ * A TrueColor visual with at least 5 bits in every channel is ideal. One
+ * with a starved channel is not: vga16fb advertises TrueColor at depth 4
+ * with masks 0x3/0x4/0x8, which is two bits of red and one each of green
+ * and blue. A PseudoColor visual of the same depth has sixteen freely
+ * settable entries, which measures about two to three times better, so
+ * prefer it. StaticColor comes next (fixed entries, but still chosen by
+ * the server rather than by a bit split), then the grey classes.
+ */
+static int visualscore(XVisualInfo *vi){
+	int rb, gb, bb, sh;
+
+	switch(vi->class){
+	case TrueColor:
+	case DirectColor:
+		maskbits(vi->red_mask, &sh, &rb);
+		maskbits(vi->green_mask, &sh, &gb);
+		maskbits(vi->blue_mask, &sh, &bb);
+		if(rb >= 5 && gb >= 5 && bb >= 5)
+			return 1000 + rb + gb + bb;
+		return 100 + rb + gb + bb;
+	case PseudoColor:
+		return 500 + vi->colormap_size;
+	case StaticColor:
+		return 400 + vi->colormap_size;
+	case GrayScale:
+		return 300 + vi->colormap_size;
+	case StaticGray:
+		return 200 + vi->colormap_size;
+	}
+	return 0;
+}
+
+static void choosevisual(){
+	XVisualInfo tmpl, *vi;
+	int n, i, best = -1, bestscore = -1;
+
+	visual = DefaultVisual(display, screen);
+	visualdepth = DefaultDepth(display, screen);
+
+	tmpl.screen = screen;
+	tmpl.depth = visualdepth;
+	if(!(vi = XGetVisualInfo(display, VisualScreenMask | VisualDepthMask, &tmpl, &n)))
+		return;
+
+	for(i = 0; i < n; i++){
+		int score = visualscore(&vi[i]);
+		if(score > bestscore){
+			bestscore = score;
+			best = i;
+		}
+	}
+
+	if(best >= 0){
+		visual = vi[best].visual;
+		visualdepth = vi[best].depth;
+		palettised = vi[best].class == PseudoColor || vi[best].class == StaticColor ||
+			vi[best].class == GrayScale || vi[best].class == StaticGray;
+	}
+
+	XFree(vi);
+}
+
+/*
+ * Sixteen entries: the eight corners of the RGB cube plus a grey ramp.
+ * Measured against a fixed VGA palette and a few cube variants over four
+ * test images, this had the lowest mean error.
+ */
+/*
+ * Build an n entry palette: the largest r=g=b colour cube that fits in
+ * about 85% of the entries, with the remainder spent on interior greys.
+ *
+ * That single rule lands on both known-good points. Sixteen entries give
+ * a 2x2x2 cube plus eight greys, which measured best of five candidate
+ * palettes over four test images; 256 entries give the classic 6x6x6
+ * cube plus forty greys. Greys matter more than hues when entries are
+ * scarce: a 3x3x2 cube with no grey ramp measured far worse at sixteen.
+ */
+static void defaultpalette(unsigned char *rgb, int n){
+	int k, i, r, g, b, greys, j = 0;
+
+	if(n > 256)
+		n = 256;
+
+	for(k = 2; (k + 1) * (k + 1) * (k + 1) <= n * 85 / 100; k++)
+		;
+	if(k * k * k > n)
+		k = 0;
+
+	for(r = 0; r < k; r++)
+		for(g = 0; g < k; g++)
+			for(b = 0; b < k; b++){
+				rgb[j * 3 + 0] = r * 255 / (k - 1);
+				rgb[j * 3 + 1] = g * 255 / (k - 1);
+				rgb[j * 3 + 2] = b * 255 / (k - 1);
+				j++;
+			}
+
+	greys = n - j;
+	for(i = 0; i < greys; i++){
+		const int v = k ? (i + 1) * 255 / (greys + 1) : i * 255 / (greys > 1 ? greys - 1 : 1);
+		rgb[j * 3 + 0] = rgb[j * 3 + 1] = rgb[j * 3 + 2] = v;
+		j++;
+	}
+}
+
+/*
+ * Install a colormap for the chosen visual and build the reverse lookup
+ * the packer needs. Writable classes get our own palette, read-only ones
+ * are read back as they are.
+ */
+static void greypalette(unsigned char *rgb, int n){
+	int i;
+
+	if(n > 256)
+		n = 256;
+	for(i = 0; i < n; i++){
+		const int v = n > 1 ? i * 255 / (n - 1) : 0;
+		rgb[i * 3 + 0] = rgb[i * 3 + 1] = rgb[i * 3 + 2] = v;
+	}
+}
+
+static void setuppalette(int mapsize){
+	unsigned char rgb[256 * 3];
+	XColor cells[256];
+	int i;
+	int writable = 0, isgrey = 0;
+	XVisualInfo tmpl, *vi;
+	int n;
+
+	if(mapsize > 256)
+		mapsize = 256;
+	if(mapsize < 2)
+		mapsize = 2;
+
+	tmpl.visualid = XVisualIDFromVisual(visual);
+	if((vi = XGetVisualInfo(display, VisualIDMask, &tmpl, &n)) && n > 0){
+		writable = vi[0].class == PseudoColor || vi[0].class == GrayScale;
+		isgrey = vi[0].class == GrayScale || vi[0].class == StaticGray;
+	}
+	if(vi)
+		XFree(vi);
+
+	colormap = XCreateColormap(display, DefaultRootWindow(display), visual,
+			writable ? AllocAll : AllocNone);
+
+	if(writable){
+		if(isgrey)
+			greypalette(rgb, mapsize);
+		else
+			defaultpalette(rgb, mapsize);
+		for(i = 0; i < mapsize; i++){
+			cells[i].pixel = i;
+			cells[i].red   = rgb[i * 3 + 0] * 257;
+			cells[i].green = rgb[i * 3 + 1] * 257;
+			cells[i].blue  = rgb[i * 3 + 2] * 257;
+			cells[i].flags = DoRed | DoGreen | DoBlue;
+		}
+		XStoreColors(display, colormap, cells, mapsize);
+	}else{
+		for(i = 0; i < mapsize; i++)
+			cells[i].pixel = i;
+		XQueryColors(display, colormap, cells, mapsize);
+		for(i = 0; i < mapsize; i++){
+			rgb[i * 3 + 0] = cells[i].red >> 8;
+			rgb[i * 3 + 1] = cells[i].green >> 8;
+			rgb[i * 3 + 2] = cells[i].blue >> 8;
+		}
+	}
+
+	palette_lut(palettelut, rgb, mapsize);
+	blackpixel = palettelut[0];	/* r5g5b5 index 0 is black */
+}
 
 /*
  * Grow-only scratch buffer holding the 32bpp BGRX image scale() produces
@@ -52,13 +254,11 @@ static char *getscratch(size_t size){
 
 static void ximage(struct data_t *data, struct image *img, unsigned int width, unsigned int height, int fast){
 	int depth;
-	Visual *visual;
 	XImage *ximg = NULL;
 	XShmSegmentInfo *shminfo = NULL;
 	struct pixfmt fmt;
 
-	depth = DefaultDepth(display, screen);
-	visual = DefaultVisual(display, screen);
+	depth = visualdepth;
 
 	if(xshm){
 		shminfo = malloc(sizeof(XShmSegmentInfo));
@@ -100,10 +300,25 @@ static void ximage(struct data_t *data, struct image *img, unsigned int width, u
 	pixfmt_init(&fmt, ximg->bits_per_pixel, ximg->byte_order == MSBFirst,
 			ximg->red_mask, ximg->green_mask, ximg->blue_mask);
 
+	if(palettised){
+		if(ximg->bits_per_pixel != 8){
+			fprintf(stderr, "meh: palettised visual at %d bits per pixel is not supported.\n",
+					ximg->bits_per_pixel);
+			exit(1);
+		}
+		pixfmt_setpalette(&fmt, palettelut);
+	}
+	/*
+	 * Only ever dither a format coarse enough to band. Forcing it on a
+	 * 24 bit display would cost the direct path for a plus or minus one
+	 * perturbation, which is worse than useless.
+	 */
+	pixfmt_setdither(&fmt, (dither != 0) && pixfmt_iscoarse(&fmt));
+
 	if(fmt.direct){
 		/* The server wants exactly what scale() writes. */
 		(fast ? nearestscale : scale)(img, ximg->width, ximg->height, ximg->bytes_per_line, ximg->data);
-	}else if(fmt.rmask | fmt.gmask | fmt.bmask){
+	}else if(fmt.lut || (fmt.rmask | fmt.gmask | fmt.bmask)){
 		/* Scale into a 32bpp buffer, then convert it a row at a time. */
 		unsigned int stride = ximg->width * 4;
 		char *buf = getscratch((size_t)stride * ximg->height);
@@ -114,7 +329,7 @@ static void ximage(struct data_t *data, struct image *img, unsigned int width, u
 	}else{
 		fprintf(stderr, "meh: unsupported visual: depth %d, %d bits per pixel, no RGB masks.\n",
 				depth, ximg->bits_per_pixel);
-		fprintf(stderr, "meh: palettised visuals are not supported yet.\n");
+		fprintf(stderr, "meh: no usable visual was found for this screen.\n");
 		exit(1);
 	}
 
@@ -218,12 +433,58 @@ void backend_init(){
 	xfd = ConnectionNumber(display);
 	screen = DefaultScreen(display);
 
-	window = XCreateWindow(display, DefaultRootWindow(display), 0, 0, 640, 480, 0, DefaultDepth(display, screen), InputOutput, CopyFromParent, 0, NULL);
+	choosevisual();
+
+	{
+		const char *e = getenv("MEH_DITHER");
+		if(e)
+			dither = *e != '0';
+	}
+
+	if(palettised || visual != DefaultVisual(display, screen)){
+		XSetWindowAttributes attr;
+		XVisualInfo tmpl, *vi;
+		int n, mapsize = 1 << visualdepth;
+
+		tmpl.visualid = XVisualIDFromVisual(visual);
+		if((vi = XGetVisualInfo(display, VisualIDMask, &tmpl, &n)) && n > 0)
+			mapsize = vi[0].colormap_size;
+		if(vi)
+			XFree(vi);
+
+		setuppalette(mapsize);
+
+		/*
+		 * A window whose visual differs from its parent's must be
+		 * given its own colormap and an explicit border pixel, or
+		 * XCreateWindow fails with BadMatch.
+		 */
+		attr.colormap = colormap;
+		attr.background_pixel = blackpixel;
+		attr.border_pixel = blackpixel;
+		window = XCreateWindow(display, DefaultRootWindow(display), 0, 0, 640, 480, 0,
+				visualdepth, InputOutput, visual,
+				CWColormap | CWBackPixel | CWBorderPixel, &attr);
+	}else{
+		window = XCreateWindow(display, DefaultRootWindow(display), 0, 0, 640, 480, 0,
+				visualdepth, InputOutput, visual, 0, NULL);
+	}
 	backend_setaspect(1, 1);
 	gc = XCreateGC(display, window, 0, NULL);
+	/* the letterbox bars, which must be black in the chosen colormap */
+	XSetForeground(display, gc, blackpixel);
 
 	XSelectInput(display, window, StructureNotifyMask | ExposureMask | KeyPressMask);
 	XMapRaised(display, window);
+	if(colormap != None){
+		XSetWindowColormap(display, window, colormap);
+		/*
+		 * Servers of this vintage often run without a window manager
+		 * to install the colormap for us, and this one allows only a
+		 * single installed map anyway.
+		 */
+		XInstallColormap(display, colormap);
+	}
 	XFlush(display);
 	XSetIOErrorHandler(xquit);
 	XFlush(display);

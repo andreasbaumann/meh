@@ -1,6 +1,10 @@
 #ifndef CONVERT_H
 #define CONVERT_H CONVERT_H
 
+/* r5g5b5 index into a palette lookup table */
+#define LUTBITS 5
+#define LUTSIZE (1 << (3 * LUTBITS))
+
 /*
  * Description of the server's output pixel format.
  *
@@ -15,10 +19,28 @@ struct pixfmt{
 	int rshift, gshift, bshift;	/* position of each channel */
 	int rbits, gbits, bbits;	/* width of each channel */
 	int direct;			/* scale() may write to the XImage itself */
+
+	const unsigned char *lut;	/* palette lookup, NULL for TrueColor */
+	int dither;			/* apply an ordered dither */
 };
 
 void pixfmt_init(struct pixfmt *fmt, int bpp, int msb,
 		unsigned long rmask, unsigned long gmask, unsigned long bmask);
+
+/* Switch fmt to palette mode. lut must hold LUTSIZE entries. */
+void pixfmt_setpalette(struct pixfmt *fmt, const unsigned char *lut);
+
+void pixfmt_setdither(struct pixfmt *fmt, int on);
+
+/* True if fmt is coarse enough that an undithered image will band badly. */
+int pixfmt_iscoarse(const struct pixfmt *fmt);
+
+/*
+ * Fill lut with the nearest of n palette entries for every r5g5b5 colour.
+ * rgb holds n * 3 bytes. Costs LUTSIZE * n distance comparisons, which is
+ * fine for the 16 entries of a depth 4 visual and slow for 256.
+ */
+void palette_lut(unsigned char *lut, const unsigned char *rgb, int n);
 
 /*
  * Convert the 32bpp BGRX buffer scale() produces into the server's format.
