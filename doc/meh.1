@@ -13,6 +13,9 @@ meh \- simple, minimalist, super fast image viewer
 .B meh \-v
 .br
 .B meh \-h
+.br
+.B meh \-\-
+.IR FILE ...
 .SH DESCRIPTION
 .B meh
 is a small, simple, super fast image viewer using raw XLib.
@@ -38,6 +41,16 @@ Print version and exit.
 .TP
 .BR \-h ,\  \-\-help
 Print a usage summary and exit successfully.
+.TP
+.B \-\-
+End of options. Every remaining argument is treated as a filename even if it
+begins with a dash, so a file called \fI\-a\fR can be viewed with
+.BR "meh \-\- \-a" .
+.SH DIAGNOSTICS
+A first argument beginning with a dash that is not one of the options above
+is rejected as an unknown option rather than taken for a filename. Use
+.B \-\-
+or a path such as \fI./\-a\fR to view such a file.
 .SH EXIT STATUS
 .B meh
 exits 0 when it was asked to print its version or help, and non-zero when
