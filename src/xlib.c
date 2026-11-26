@@ -552,7 +552,6 @@ void backend_init(){
 
 	XStoreName(display, window, "meh");
 
-	XMapRaised(display, window);
 	XSelectInput(display, window, StructureNotifyMask | ExposureMask | KeyPressMask | ButtonPressMask);
 	XMapRaised(display, window);
 	if(colormap != None){
