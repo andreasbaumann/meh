@@ -1,5 +1,6 @@
 #include "stdio.h"
 #include "stdlib.h"
+#include "string.h"
 #include "sys/time.h"
 
 #include "../src/meh.h"
@@ -22,9 +23,10 @@ STARTTEST(scale){
 	img.bufwidth = 1280*2;
 	img.bufheight = 1024*2;
 	img.buf = malloc(img.bufwidth*img.bufheight*4);
+	memset(img.buf, 0x80, img.bufwidth*img.bufheight*3);
 	char *to = malloc(1280*1024*4);
 	STARTTIME{
-		scale(&img, 1280, 1024, 1280, to);
+		scale(&img, 1280, 1024, 1280*4, to);
 	}ENDTIME
 	free(to);
 	free(img.buf);
@@ -35,9 +37,10 @@ STARTTEST(nearestscale){
 	img.bufwidth = 1280*2;
 	img.bufheight = 1024*2;
 	img.buf = malloc(img.bufwidth*img.bufheight*4);
+	memset(img.buf, 0x80, img.bufwidth*img.bufheight*3);
 	char *to = malloc(1280*1024*4);
 	STARTTIME{
-		nearestscale(&img, 1280, 1024, 1280, to);
+		nearestscale(&img, 1280, 1024, 1280*4, to);
 	}ENDTIME
 	free(to);
 	free(img.buf);
