@@ -11,6 +11,8 @@ meh \- simple, minimalist, super fast image viewer
 .B meh \-ctl
 .br
 .B meh \-v
+.br
+.B meh \-h
 .SH DESCRIPTION
 .B meh
 is a small, simple, super fast image viewer using raw XLib.
@@ -33,3 +35,14 @@ Display files as they are received on stdin.
 .TP
 .B \-v
 Print version and exit.
+.TP
+.BR \-h ,\  \-\-help
+Print a usage summary and exit successfully.
+.SH EXIT STATUS
+.B meh
+exits 0 when it was asked to print its version or help, and non-zero when
+it was invoked incorrectly or could not display any image. A usage summary
+printed because of a bad invocation goes to standard error; one printed
+because
+.B \-h
+asked for it goes to standard output.
