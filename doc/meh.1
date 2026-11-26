@@ -13,6 +13,11 @@ meh \- simple, minimalist, super fast image viewer
 .B meh \-f
 .br
 .B meh \-v
+.br
+.B meh \-h
+.br
+.B meh \-\-
+.IR FILE ...
 .SH DESCRIPTION
 .B meh
 is a small, simple, super fast image viewer using raw XLib.
@@ -38,6 +43,14 @@ Use nearest neighbour interpolation (fast).
 .TP
 .B \-v
 Print version and exit.
+.TP
+.BR \-h ,\  \-\-help
+Print a usage summary and exit successfully.
+.TP
+.B \-\-
+End of options. Every remaining argument is treated as a filename even if it
+begins with a dash, so a file called \fI\-a\fR can be viewed with
+.BR "meh \-\- \-a" .
 .SH DISPLAY DEPTHS
 .B meh
 renders to whatever visual the X server offers. TrueColor and DirectColor
@@ -63,3 +76,16 @@ Set to
 .B 0
 to disable dithering on coarse displays. Useful for judging the result by eye
 on the hardware, since the trade is banding against noise.
+.SH DIAGNOSTICS
+A first argument beginning with a dash that is not one of the options above
+is rejected as an unknown option rather than taken for a filename. Use
+.B \-\-
+or a path such as \fI./\-a\fR to view such a file.
+.SH EXIT STATUS
+.B meh
+exits 0 when it was asked to print its version or help, and non-zero when
+it was invoked incorrectly or could not display any image. A usage summary
+printed because of a bad invocation goes to standard error; one printed
+because
+.B \-h
+asked for it goes to standard output.

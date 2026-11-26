@@ -30,13 +30,32 @@ static struct imageformat *formats[] = {
 };
 
 
+static void printusage(FILE *f){
+	fprintf(f, "USAGE: meh [FILE1 [FILE2 [...]]]\n");
+	fprintf(f, "       meh -list [LISTFILE]      : Treat file as list of images. Defaults to stdin.\n");
+	fprintf(f, "       meh -ctl                  : Display files as they are received on stdin.\n");
+	fprintf(f, "       meh -v                    : Print version and exit.\n");
+	fprintf(f, "       meh -f                    : Use nearest neighbor interpolation (fast).\n");
+	fprintf(f, "       meh -h                    : Print this help and exit.\n");
+	fprintf(f, "       meh -- [FILE1 [...]]      : Treat the rest as filenames, even if they begin with -.\n");
+}
+
+/*
+ * Wrong arguments: the message is a diagnostic, so it goes to stderr and
+ * the status is non-zero for whatever called us.
+ */
 static void usage(){
-	printf("USAGE: meh [FILE1 [FILE2 [...]]]\n");
-	printf("       meh -list [LISTFILE]      : Treat file as list of images. Defaults to stdin.\n");
-	printf("       meh -ctl                  : Display files as they are received on stdin.\n");
-	printf("       meh -v                    : Print version and exit.\n");
-	printf("       meh -f                    : Use nearest neighbor interpolation (fast).\n");
+	printusage(stderr);
 	exit(EXIT_FAILURE);
+}
+
+/*
+ * Help that was asked for is the output the user wanted, so it goes to
+ * stdout and succeeds. This is why -h cannot simply call usage().
+ */
+static void help(){
+	printusage(stdout);
+	exit(EXIT_SUCCESS);
 }
 
 static struct image *newimage(FILE *f){
@@ -322,6 +341,8 @@ int main(int argc, char *argv[]){
 		}else{
 			usage();
 		}
+	}else if(!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")){
+		help();
 	}else if(!strcmp(argv[1], "-v")){
 		printf("meh version 0.3\n");
 		return 0;
@@ -330,7 +351,25 @@ int main(int argc, char *argv[]){
 		images = argv + 2;
 		imageslen = argc - 2;
 		imageidx = 0;
-	} else {
+	}else if(!strcmp(argv[1], "--")){
+		/* An explicit end of options, so that a file really called -a
+		 * is still reachable as "meh -- -a". */
+		if(argc < 3)
+			usage();
+		mode = MODE_NORM;
+		images = &argv[2];
+		imageslen = argc - 2;
+		imageidx = 0;
+	}else if(argv[1][0] == '-'){
+		/*
+		 * Anything else that looks like an option is a mistake. Taken for
+		 * a filename it failed much later, and with no display it failed
+		 * in backend_init() first, reporting a missing X server instead
+		 * of the typo.
+		 */
+		fprintf(stderr, "meh: unknown option '%s'\n", argv[1]);
+		usage();
+	}else{
 		mode = MODE_NORM;
 		images = &argv[1];
 		imageslen = argc-1;
