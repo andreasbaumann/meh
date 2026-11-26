@@ -92,7 +92,12 @@ static void ximage(struct data_t *data, struct image *img, unsigned int width, u
 }
 
 void backend_prepare(struct image *img, unsigned int width, unsigned int height, int fast){
-	struct data_t *data = img->backend = malloc(sizeof (struct data_t));
+	/*
+	 * calloc, not malloc: shmpix is only assigned when the server has
+	 * shm pixmap support, but backend_draw() and backend_free() look at
+	 * it either way.
+	 */
+	struct data_t *data = img->backend = calloc(1, sizeof (struct data_t));
 	if(width * img->bufheight > height * img->bufwidth){
 		ximage(data, img, img->bufwidth * height / img->bufheight, height, fast);
 	}else{
