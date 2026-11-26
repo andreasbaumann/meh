@@ -101,7 +101,7 @@ void gif_close(struct image *img){
 #endif
 
 #if defined(GIFLIB_MAJOR) && defined(GIFLIB_MINOR) && (GIFLIB_MAJOR > 5 || (GIFLIB_MAJOR == 5 && GIFLIB_MINOR >= 1))
-	DGifCloseFile(g->gif, &ErrorCode);
+	ret = DGifCloseFile(g->gif, &ErrorCode);
 	if(ret != GIF_OK) {
 #if defined(GIFLIB_MAJOR) && GIFLIB_MAJOR >= 5
 		fprintf(stderr, "GIFLIB: %s\n", GifErrorString(ErrorCode));
